@@ -1,5 +1,6 @@
 import socket
 from datetime import datetime
+from functools import wraps
 from flask import session, redirect, url_for
 
 import os
@@ -46,6 +47,7 @@ def login_required(role=None):
     role (str, optional): Role to check for
     """
     def wrapper(fn):
+        @wraps(fn)
         def decorated_view(*args, **kwargs):
             if 'user_id' not in session:
                 return redirect(url_for('admin.login'))

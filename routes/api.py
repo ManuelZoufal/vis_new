@@ -2,7 +2,7 @@ from . import api_bp
 
 from src.sensor import sensors
 from src.helpers import get_local_ip, log_change
-from src.scheduler import add_schedule, edit_schedule, delete_schedule
+from src.scheduler import add_schedule as scheduler_add_schedule, edit_schedule as scheduler_edit_schedule, delete_schedule as scheduler_delete_schedule
 from src.database import get_connection, save_sensor_values
 
 from flask import jsonify, session, request, send_file
@@ -11,6 +11,7 @@ from threading import enumerate as enumerate_threads
 import json
 import sqlite3
 import socket
+import io
 
 
 # /api
@@ -333,8 +334,11 @@ def export_debug_info():
     """
     # Check if the user is an administrator
     if 'role' in session and session['role'] == 'Administrator':
-        # Return the debug_info.txt file as an attachment
-        return send_file('debug_info.txt', as_attachment=True)
+        lines = []
+        for thread in enumerate_threads():
+            lines.append(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Thread \"{thread.name}\" is {'active' if thread.is_alive() else 'inactive'}\n")
+        content = io.BytesIO(''.join(lines).encode('utf-8'))
+        return send_file(content, as_attachment=True, download_name='debug_info.txt', mimetype='text/plain')
     return jsonify({'error': 'Unauthorized to export debug information'}), 403
 
 # /api/sensors/<sensor_id>/reset
@@ -1113,15 +1117,13 @@ def update_group_settings(group_id):
     data = request.json
     with open('config.json', 'r') as file:
         config = json.load(file)
-    for group in config['groups']:
-        if str(group['group_id']) == group_id:
-            group['name'] = data.get('name', group['name'])
-            group['max_occupancy'] = data.get('max_occupancy', group['max_occupancy'])
-            group['welcome_text'] = data.get('welcome_text', group['welcome_text'])
-            group['maintenance_mode'] = data.get('maintenance_mode', group.get('maintenance_mode', False))
-            break
-        else:
-            return jsonify({'status': 'error', 'message': 'Group not found'}), 404
+    group = next((g for g in config['groups'] if str(g['group_id']) == group_id), None)
+    if not group:
+        return jsonify({'status': 'error', 'message': 'Group not found'}), 404
+    group['name'] = data.get('name', group['name'])
+    group['max_occupancy'] = data.get('max_occupancy', group['max_occupancy'])
+    group['welcome_text'] = data.get('welcome_text', group['welcome_text'])
+    group['maintenance_mode'] = data.get('maintenance_mode', group.get('maintenance_mode', False))
     with open('config.json', 'w') as file:
         json.dump(config, file, indent=4)
     log_change(f"Group {group_id} settings updated: name={data.get('name')}, max_occupancy={data.get('max_occupancy')}, welcome_text={data.get('welcome_text')}, maintenance_mode={data.get('maintenance_mode')}")
@@ -1186,7 +1188,7 @@ def get_schedulers():
 
 # /api/schedules/add
 @api_bp.route('/schedules/add', methods=['PUT'])
-def add_schedule():
+def add_schedule_route():
     """
     Add schedule
     ---
@@ -1292,13 +1294,13 @@ def add_schedule():
         json.dump(config, file, indent=4)
     
     # Add the new schedule to the scheduler
-    add_schedule(new_schedule)
-    
+    scheduler_add_schedule(new_schedule)
+
     return jsonify({'status': 'success', 'schedule': new_schedule}), 200
 
 # /api/schedules/<schedule_id>/edit
 @api_bp.route('/schedules/<schedule_id>/edit', methods=['POST'])
-def edit_schedule(schedule_id):
+def edit_schedule_route(schedule_id):
     """
     Edit schedule
     ---
@@ -1382,13 +1384,13 @@ def edit_schedule(schedule_id):
         json.dump(config, file, indent=4)
     
     # Edit the schedule in the scheduler
-    edit_schedule(schedule_id, data)
-    
+    scheduler_edit_schedule(schedule_id, data)
+
     return jsonify({'status': 'success', 'schedule': data}), 200
 
 # /api/schedules/<schedule_id>/delete
 @api_bp.route('/schedules/<schedule_id>/delete', methods=['DELETE'])
-def delete_schedule(schedule_id):
+def delete_schedule_route(schedule_id):
     """
     Delete schedule
     ---
@@ -1436,6 +1438,6 @@ def delete_schedule(schedule_id):
         json.dump(config, file, indent=4)
     
     # Delete the schedule from the scheduler
-    delete_schedule(schedule_id)
-    
+    scheduler_delete_schedule(schedule_id)
+
     return jsonify({'status': 'success'})

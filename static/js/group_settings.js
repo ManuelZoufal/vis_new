@@ -74,7 +74,7 @@ async function saveGroupSettings() {
         data[key] = value;
     });
     data.maintenance_mode = document.getElementById('groupMaintenanceMode').checked;
-    const url = currentGroupId ? `/api/groups/${currentGroupId}/edit` : '/api//groups/add';
+    const url = currentGroupId ? `/api/groups/${currentGroupId}/edit` : '/api/groups/add';
     const method = currentGroupId ? 'POST' : 'PUT';
     const response = await fetch(url, {
         method: method,
