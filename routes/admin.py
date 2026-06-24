@@ -33,7 +33,7 @@ def login():
                 session.permanent = True
             return redirect(url_for('admin.index'))
         else:
-            flash('Invalid username or password')
+            flash('Benutzername oder Passwort falsch', 'error')
 
     return render_template('admin/login.html')
 

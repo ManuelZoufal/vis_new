@@ -98,6 +98,23 @@ async function init() {
         const data = await fetchOccupancy(groupId);
         deactivateMaintenanceMode();
 
+        const centerTextPlugin = {
+            id: 'centerText',
+            afterDraw(chart) {
+                const { ctx, chartArea: { left, top, width, height } } = chart;
+                const total = chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                const value = chart.data.datasets[0].data[0];
+                const pct = total > 0 ? Math.round(value / total * 100) : 0;
+                ctx.save();
+                ctx.font = 'bold 2.5em Arial';
+                ctx.fillStyle = pct >= 100 ? '#ff2020' : '#009999';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`${pct}%`, left + width / 2, top + height / 2);
+                ctx.restore();
+            }
+        };
+
         const ctx = document.getElementById('occupancyChart').getContext('2d');
         const occupancyChart = new Chart(ctx, {
             type: 'doughnut',
@@ -105,26 +122,18 @@ async function init() {
                 labels: ['Belegt', 'Verfügbar'],
                 datasets: [{
                     data: [Math.max(0, data.total_occupancy), Math.max(0, data.max_occupancy - data.total_occupancy)],
-                    backgroundColor: ['#FF0000', '#00FF00'],
-                    hoverBackgroundColor: ['#FF6384', '#36A2EB']
+                    backgroundColor: ['#FF2020', '#00CC00'],
+                    hoverBackgroundColor: ['#FF5555', '#00AA00']
                 }]
             },
             options: {
+                cutout: '70%',
                 plugins: {
-                    datalabels: {
-                        color: '#fff',
-                        formatter: (value, context) => {
-                            const dataset = context.chart.data.datasets[0];
-                            const total = dataset.data.reduce((a, b) => a + b, 0);
-                            const percentage = (value / total * 100).toFixed(2);
-                            return `${percentage}%`;
-                        }
-                    },
-                    legend: {
-                        display: false
-                    }
+                    datalabels: { display: false },
+                    legend: { display: false }
                 }
-            }
+            },
+            plugins: [centerTextPlugin]
         });
 
         updateChart(occupancyChart, data);

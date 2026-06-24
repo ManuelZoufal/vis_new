@@ -28,6 +28,7 @@ async function fetchAdminData() {
         const currentOccupancy = calculateCurrentOccupancy(group.group_id, data.sensors);
         const occupancyPercentage = calculateOccupancyPercentage(currentOccupancy, group.max_occupancy);
         const tr = document.createElement('tr');
+        if (group.maintenance_mode) tr.classList.add('row-maintenance');
         tr.innerHTML = `
             <td>${group.group_id}</td>
             <td>${group.name}</td>
