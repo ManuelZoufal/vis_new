@@ -1,13 +1,10 @@
 let schedules = [];
 let sensors = [];
 
-async function fetchSchedules() {
-    const response = await fetch('/api/schedules');
-    const data = await response.json();
-    schedules = data.schedules;
+function renderSchedules(scheduleList) {
     const schedulesList = document.getElementById('schedules-list');
     schedulesList.innerHTML = '';
-    schedules.forEach(schedule => {
+    scheduleList.forEach(schedule => {
         const sensorNames = Array.isArray(schedule.sensors) ? schedule.sensors.join(', ') : schedule.sensors;
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -23,6 +20,13 @@ async function fetchSchedules() {
         `;
         schedulesList.appendChild(tr);
     });
+}
+
+async function fetchSchedules() {
+    const response = await fetch('/api/schedules');
+    const data = await response.json();
+    schedules = data.schedules;
+    renderSchedules(schedules);
 }
 
 async function fetchSensorData() {
@@ -100,8 +104,14 @@ async function deleteSchedule(scheduleId) {
             method: 'DELETE'
         });
         if (response.ok) {
+            const data = await response.json();
+            if (data.schedules !== undefined) {
+                schedules = data.schedules;
+                renderSchedules(schedules);
+            } else {
+                await fetchSchedules();
+            }
             alert('Geplante Aktion gelöscht');
-            fetchSchedules();
         } else {
             alert('Fehler beim Löschen der geplanten Aktion');
         }

@@ -1447,6 +1447,6 @@ def delete_schedule_route(schedule_id):
         json.dump(config, file, indent=4)
     
     # Delete the schedule from the scheduler
-    scheduler_delete_schedule(schedule_id)
+    scheduler_delete_schedule(schedule_id_int)
 
-    return jsonify({'status': 'success'})
+    return jsonify({'status': 'success', 'schedules': schedules})
