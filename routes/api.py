@@ -1449,4 +1449,4 @@ def delete_schedule_route(schedule_id):
     except Exception:
         pass
 
-    return jsonify({'status': 'success', 'schedules': schedules, '_debug_deleted_id': str(schedule_id)})
+    return jsonify({'status': 'success', 'schedules': schedules})
