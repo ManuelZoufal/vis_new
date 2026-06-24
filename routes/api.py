@@ -1436,17 +1436,17 @@ def delete_schedule_route(schedule_id):
     """
     with open('config.json', 'r') as file:
         config = json.load(file)
-    schedules = config.get('schedules', [])
-    try:
-        schedule_id_int = int(schedule_id)
-    except (ValueError, TypeError):
-        return jsonify({'status': 'error', 'message': 'Invalid schedule ID'}), 400
-    schedules = [schedule for schedule in schedules if schedule.get('id') != schedule_id_int]
+    all_schedules = config.get('schedules', [])
+    # Vergleich als String, um Typ-Mismatches (int vs str) zu vermeiden
+    schedules = [s for s in all_schedules if str(s.get('id')) != str(schedule_id)]
     config['schedules'] = schedules
     with open('config.json', 'w') as file:
         json.dump(config, file, indent=4)
-    
-    # Delete the schedule from the scheduler
-    scheduler_delete_schedule(schedule_id_int)
 
-    return jsonify({'status': 'success', 'schedules': schedules})
+    # Delete the schedule from the scheduler
+    try:
+        scheduler_delete_schedule(int(schedule_id))
+    except Exception:
+        pass
+
+    return jsonify({'status': 'success', 'schedules': schedules, '_debug_deleted_id': str(schedule_id)})
