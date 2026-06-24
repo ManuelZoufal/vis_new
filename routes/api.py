@@ -1,0 +1,1441 @@
+from . import api_bp
+
+from src.sensor import sensors
+from src.helpers import get_local_ip, log_change
+from src.scheduler import add_schedule, edit_schedule, delete_schedule
+from src.database import get_connection, save_sensor_values
+
+from flask import jsonify, session, request, send_file
+from datetime import datetime, timezone, timedelta
+from threading import enumerate as enumerate_threads
+import json
+import sqlite3
+import socket
+
+
+# /api
+@api_bp.route('/')
+def api_index():
+    """
+    API index route
+    ---
+    get:
+      description: Returns a JSON object with a status message
+      responses:
+        200:
+          description: API is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the API
+                    example: success
+                  message:
+                    type: string
+                    description: A message from the API
+                    example: API is running
+    """
+    return jsonify({'status': 'success', 'message': 'API is running'}), 200
+
+# /api/get_data
+@api_bp.route('/get_data')
+def get_data():
+    """
+    Get sensor data
+    ---
+    get:
+      description: Returns a JSON object with sensor data
+      responses:
+        200:
+          description: Sensor data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  local_ip:
+                    type: string
+                    description: The local IP address
+                    example:
+                  server_hostname:
+                    type: string
+                    description: The server hostname
+                    example:
+                  system_time:
+                    type: string
+                    description: The system time
+                    example:
+                  sensors:
+                    type: array
+                    description: An array of sensor data
+                    items:
+                      type: object
+                      properties:
+                        sensor_id:
+                          type: integer
+                          description: The sensor ID
+                          example: 1
+                        name:
+                          type: string
+                          description: The sensor name
+                          example: Sensor 1
+                        ip_address:
+                          type: string
+                          description: The sensor IP address
+                          example:
+                        group_id:
+                          type: integer
+                          description: The group ID
+                          example: 1
+                        occupancy:
+                          type: integer
+                          description: The sensor occupancy
+                          example: 0
+                        forward_value:
+                          type: integer
+                          description: The forward value
+                          example: 0
+                        backward_value:
+                          type: integer
+                          description: The backward value
+                          example: 0
+                        timestamp:
+                          type: string
+                          description: The sensor timestamp
+                          example:
+                        type:
+                          type: string
+                          description: The sensor type
+                          example: motion
+                  groups:
+                    type: array
+                    description: An array of group data
+                    items:
+                      type: object
+                      properties:
+                        group_id:
+                          type: integer
+                          description: The group ID
+                          example: 1
+                        name:
+                          type: string
+                          description: The group name
+                          example: Group 1
+    """
+    # Get the local IP address, server hostname, and system time
+    local_ip = get_local_ip()
+    server_hostname = socket.gethostname()
+    system_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Get sensor data from the database
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT sensor_id, group_id, occupancy, forward_value, backward_value, datapoint_id, timestamp FROM sensor_data')
+    db_data = cursor.fetchall()
+    conn.close()
+
+    # Get sensor data from the config file
+    with open('config.json', 'r') as file:
+        config = json.load(file)
+    
+    # Combine sensor data from the config file and the database
+    sensor_data = [{
+        'sensor_id': sensor['sensor_id'],
+        'name': sensor['name'],
+        'ip_address': sensor.get('ip_address', 'N/A'),
+        'group_id': sensor['group_id'],
+        'occupancy': next((row[2] for row in db_data if row[0] == sensor['sensor_id']), sensor.get('occupancy', 0)),
+        'forward_value': next((row[3] for row in db_data if row[0] == sensor['sensor_id']), 0),
+        'backward_value': next((row[4] for row in db_data if row[0] == sensor['sensor_id']), 0),
+        'datapoint_id': next((row[5] for row in db_data if row[0] == sensor['sensor_id']), "N/A"),
+        'timestamp': next((row[6] for row in db_data if row[0] == sensor['sensor_id']), 'N/A'),
+        'type': sensor['type']
+    } for sensor in config['sensors']]
+
+    # Convert timestamps to the desired timezone
+    for sensor in sensor_data:
+        if sensor['timestamp'] != 'N/A':
+            dt = datetime.strptime(sensor['timestamp'], '%Y-%m-%d %H:%M:%S')
+            dt = dt.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=1)))  # Adjust to your desired timezone
+            sensor['timestamp'] = dt.strftime('%Y-%m-%d %H:%M:%S %Z')
+    # Get group data from the config file
+    group_data = config['groups']
+
+    # Return the sensor data and group data as a JSON object
+    return jsonify({
+        'local_ip': local_ip,
+        'server_hostname': server_hostname,
+        'system_time': system_time,
+        'sensors': sensor_data,
+        'groups': group_data
+    }), 200
+
+# /api/logs
+@api_bp.route('/logs')
+def get_logs():
+    """
+    Get logs
+    ---
+    get:
+      description: Returns a JSON object with logs
+      responses:
+        200:
+          description: Logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: array
+                    description: An array of log messages
+                    items:
+                      type: string
+                      example: Log message 1
+        500:
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Error message
+    """
+    # Get the log messages from the session
+    logs = []
+    try:
+        # Read log messages from the change_log.txt file
+        with open('change_log.txt', 'r') as file:
+            for line in file:
+                timestamp, message = line.strip().split(' - ', 1)
+                logs.append({'timestamp': timestamp, 'message': message})
+        return jsonify({'logs': logs}), 200
+    # Handle exceptions
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+# /api/debug_info
+@api_bp.route('/debug_info')
+def get_debug_info():
+    """
+    Get debug information
+    ---
+    get:
+      description: Returns a JSON object with debug information
+      responses:
+        200:
+          description: Debug information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  debug_info:
+                    type: array
+                    description: An array of debug messages
+                    items:
+                      type: object
+                      properties:
+                        timestamp:
+                          type: string
+                          description: The timestamp of the debug message
+                          example:
+                        message:
+                          type: string
+                          description: The debug message
+                          example:
+        403:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Unauthorized
+    """
+    # Check if the user is an administrator
+    if 'role' in session and session['role'] == 'Administrator':
+        # Get debug information from the threads
+        debug_info = []
+        # Enumerate all threads and check if they are active
+        for thread in enumerate_threads():
+            debug_info.append({
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'message': f'Thread "{thread.name}" is {"active" if thread.is_alive() else "inactive"}'
+            })
+        return jsonify({'debug_info': debug_info}), 200
+    return jsonify({'error': 'Unauthorized to view debug information'}), 403
+
+# /api/export_logs
+@api_bp.route('/logs/export')
+def export_logs():
+    """
+    Export logs
+    ---
+    get:
+      description: Returns a file download of the logs
+      responses:
+        200:
+          description: File download
+          content:
+            application/octet-stream:
+              schema:
+                type: file
+        403:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Unauthorized
+    """
+    # Check if the user is an administrator
+    if 'role' in session and session['role'] == 'Administrator':
+        # Return the change_log.txt file as an attachment
+        return send_file('change_log.txt', as_attachment=True)
+    return jsonify({'error': 'Unauthorized to export logs'}), 403
+
+# /api/export_debug_info
+@api_bp.route('/debug_info/export')
+def export_debug_info():
+    """
+    Export debug information
+    ---
+    get:
+      description: Returns a file download of the debug information
+      responses:
+        200:
+          description: File download
+          content:
+            application/octet-stream:
+              schema:
+                type: file
+        403:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Unauthorized
+    """
+    # Check if the user is an administrator
+    if 'role' in session and session['role'] == 'Administrator':
+        # Return the debug_info.txt file as an attachment
+        return send_file('debug_info.txt', as_attachment=True)
+    return jsonify({'error': 'Unauthorized to export debug information'}), 403
+
+# /api/sensors/<sensor_id>/reset
+@api_bp.route('/sensors/<sensor_id>/reset', methods=['POST'])
+def reset_sensor(sensor_id):
+    """
+    Reset sensor
+    ---
+    post:
+      description: Resets a sensors count values
+      parameters:
+        - in: path
+          name: sensor_id
+          schema:
+            type: integer
+          required: true
+          description: The ID of the sensor to reset
+      responses:
+        200:
+          description: Sensor reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the reset operation
+                    example: success
+        404:
+          description: Sensor not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Sensor not found
+    """
+    sensor = next((s for s in sensors if s.sensor_id == sensor_id), None)
+    if sensor:
+        sensor.reset_sensor_values()
+        log_change(f"Sensor {sensor_id} reset")
+        return jsonify({'status': 'success'}), 200
+    return jsonify({'status': 'error', 'message': 'Sensor not found'}), 404
+
+# /api/sensors/<sensor_id>/reboot
+@api_bp.route('/sensors/<sensor_id>/reboot', methods=['POST'])
+def reboot_sensor(sensor_id):
+    """
+    Reboot sensor
+    ---
+    post:
+      description: Reboots a sensor
+      parameters:
+        - in: path
+          name: sensor_id
+          schema:
+            type: integer
+          required: true
+          description: The ID of the sensor to reboot
+      responses:
+        200:
+          description: Sensor rebooted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the reboot operation
+                    example: success
+        404:
+          description: Sensor not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Sensor not found
+    """
+    sensor = next((s for s in sensors if s.sensor_id == sensor_id), None)
+    if sensor:
+        sensor.reboot_sensor()
+        log_change(f"Sensor {sensor_id} rebooted")
+        return jsonify({'status': 'success'}), 200
+    return jsonify({'status': 'error', 'message': 'Sensor not found'}), 404
+
+# /api/sensors/<sensor_id>/edit
+@api_bp.route('/sensors/<sensor_id>/edit', methods=['POST'])
+def edit_sensor(sensor_id):
+    """
+    Edit sensor
+    ---
+    post:
+      description: Edits a sensor's name and group ID
+      parameters:
+        - in: path
+          name: sensor_id
+          schema:
+            type: integer
+          required: true
+          description: The ID of the sensor to edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: The new name of the sensor
+                  example: Sensor 1
+                group_id:
+                  type: integer
+                  description: The new group ID of the sensor
+                  example: 1
+      responses:
+        200:
+          description: Sensor edited
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the edit operation
+                    example: success
+        404:
+          description: Sensor not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Sensor not found
+    """
+    sensor = next((s for s in sensors if s.sensor_id == sensor_id), None)
+    if sensor:
+        data = request.json
+        sensor.name = data.get('name', sensor.name)
+        sensor.group_id = data.get('group_id', sensor.group_id)
+        sensor.datapoint_id = data.get('datapoint_id', sensor.datapoint_id)
+        # Save changes to config file
+        with open('config.json', 'r') as file:
+            config = json.load(file)
+        for sensor_config in config['sensors']:
+            if sensor_config['sensor_id'] == sensor_id:
+                sensor_config['name'] = sensor.name
+                sensor_config['group_id'] = sensor.group_id
+                sensor_config['datapoint_id'] = sensor.datapoint_id
+                break
+        with open('config.json', 'w') as file:
+            json.dump(config, file, indent=4)
+        log_change(f"Sensor {sensor_id} edited: name={sensor.name}, group_id={sensor.group_id}, datapoint_id={sensor.datapoint_id}")
+        save_sensor_values(sensor)
+        return jsonify({'status': 'success'}), 200
+    return jsonify({'status': 'error', 'message': 'Sensor not found'}), 404
+
+# /api/sensors/virtual/add
+@api_bp.route('/sensors/virtual/add', methods=['PUT'])
+def add_virtual_sensor():
+    """
+    Add virtual sensor
+    ---
+    post:
+      description: Adds a virtual sensor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: The name of the virtual sensor
+                  example: Virtual Sensor 1
+                group_id:
+                  type: integer
+                  description: The group ID of the virtual sensor
+                  example: 1
+                occupancy:
+                  type: integer
+                  description: The occupancy of the virtual sensor
+                  example: 0
+      responses:
+        200:
+          description: Virtual sensor added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the add operation
+                    example: success
+                  sensor:
+                    type: object
+                    description: The added virtual sensor
+                    properties:
+                      sensor_id:
+                        type: integer
+                        example: 1
+                      type:
+                        type: string
+                        example: VIRTUAL
+                      name:
+                        type: string
+                        example: Virtual Sensor 1
+                      group_id:
+                        type: integer
+                        example: 1
+                      occupancy:
+                        type: integer
+                        example: 0
+        500:
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Error message
+    """
+    data = request.json
+    with open('config.json', 'r') as file:
+        config = json.load(file)
+    
+    # Find the next available integer for sensor_id
+    existing_sensor_ids = [int(sensor['sensor_id']) for sensor in config['sensors']]
+    next_sensor_id = max(existing_sensor_ids) + 1 if existing_sensor_ids else 1
+
+    new_sensor = {
+        "sensor_id": str(next_sensor_id),  # Use the next available integer
+        "type": "VIRTUAL",
+        "name": data['name'],
+        "group_id": str(data['group_id']),
+        "occupancy": int(data['occupancy'])
+    }
+    config['sensors'].append(new_sensor)
+    with open('config.json', 'w') as file:
+        json.dump(config, file, indent=4)
+    return jsonify({'status': 'success', 'sensor': new_sensor}), 200
+
+# /api/sensors/virtual/<sensor_id>/edit
+@api_bp.route('/sensors/virtual/<sensor_id>/edit', methods=['POST'])
+def edit_virtual_sensor(sensor_id):
+    """
+    Edit virtual sensor
+    ---
+    post:
+      description: Edits a virtual sensor's name, group ID, and occupancy
+      parameters:
+        - in: path
+          name: sensor_id
+          schema:
+            type: integer
+          required: true
+          description: The ID of the virtual sensor to edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: The new name of the virtual sensor
+                  example: Virtual Sensor 1
+                group_id:
+                  type: integer
+                  description: The new group ID of the virtual sensor
+                  example: 1
+                occupancy:
+                  type: integer
+                  description: The new occupancy of the virtual sensor
+                  example: 0
+      responses:
+        200:
+          description: Virtual sensor edited
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the edit operation
+                    example: success
+                  sensor:
+                    type: object
+                    description: The edited virtual sensor
+                    properties:
+                      sensor_id:
+                        type: integer
+                        example: 1
+                      type:
+                        type: string
+                        example: VIRTUAL
+                      name:
+                        type: string
+                        example: Virtual Sensor 1
+                      group_id:
+                        type: integer
+                        example: 1
+                      occupancy:
+                        type: integer
+                        example: 0
+        404:
+          description: Sensor not found or not virtual
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Sensor not found or not virtual
+    """
+    data = request.json
+    with open('config.json', 'r') as file:
+        config = json.load(file)
+    sensor = next((s for s in config['sensors'] if s['sensor_id'] == sensor_id), None)
+    if sensor and sensor['type'] == 'VIRTUAL':
+        sensor['name'] = data.get('name', sensor['name'])
+        sensor['group_id'] = str(data.get('group_id', sensor['group_id']))
+        sensor['occupancy'] = data.get('occupancy', sensor['occupancy'])
+        with open('config.json', 'w') as file:
+            json.dump(config, file, indent=4)
+        return jsonify({'status': 'success', 'sensor': sensor}), 200
+    return jsonify({'status': 'error', 'message': 'Sensor not found or not virtual'}), 404
+
+# /api/sensors/virtual/<sensor_id>/delete 
+@api_bp.route('/sensors/virtual/<sensor_id>/delete', methods=['DELETE'])
+def delete_virtual_sensor(sensor_id):
+    """
+    Delete virtual sensor
+    ---
+    delete:
+      description: Deletes a virtual sensor
+      parameters:
+        - in: path
+          name: sensor_id
+          schema:
+            type: integer
+          required: true
+          description: The ID of the virtual sensor to delete
+      responses:
+        200:
+          description: Virtual sensor deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the delete operation
+                    example: success
+        404:
+          description: Sensor not found or not virtual
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Sensor not found or not virtual
+    """
+    with open('config.json', 'r') as file:
+        config = json.load(file)
+    sensor = next((s for s in config['sensors'] if s['sensor_id'] == sensor_id), None)
+    if sensor and sensor['type'] == 'VIRTUAL':
+        config['sensors'] = [s for s in config['sensors'] if s['sensor_id'] != sensor_id]
+        with open('config.json', 'w') as file:
+            json.dump(config, file, indent=4)
+        return jsonify({'status': 'success'}), 200
+    return jsonify({'status': 'error', 'message': 'Sensor not found or not virtual'}), 404
+
+# /api/groups/add
+@api_bp.route('/groups/add', methods=['PUT'])
+def add_group():
+    """
+    Add group
+    ---
+    put:
+      description: Adds a group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: The name of the group
+                  example: Group 1
+                max_occupancy:
+                  type: integer
+                  description: The maximum occupancy of the group
+                  example: 10
+                welcome_text:
+                  type: string
+                  description: The welcome text of the group
+                  example: Welcome to Group 1
+                maintenance_mode:
+                  type: boolean
+                  description: The maintenance mode status of the group
+                  example: false
+      responses:
+        200:
+          description: Group added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the add operation
+                    example: success
+                  group:
+                    type: object
+                    description: The added group
+                    properties:
+                      group_id:
+                        type: integer
+                        example: 1
+                      name:
+                        type: string
+                        example: Group 1
+                      max_occupancy:
+                        type: integer
+                        example: 10
+                      welcome_text:
+                        type: string
+                        example: Welcome to Group 1
+                      maintenance_mode:
+                        type: boolean
+                        example: false
+        500:
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Error message
+    """
+    data = request.json
+    with open('config.json', 'r') as file:
+        config = json.load(file)
+    
+    # Find the next available integer for group_id
+    existing_group_ids = [int(group['group_id']) for group in config['groups']]
+    next_group_id = max(existing_group_ids) + 1 if existing_group_ids else 1
+
+    new_group = {
+        "group_id": str(next_group_id),  # Use the next available integer
+        "name": data['name'],
+        "max_occupancy": data['max_occupancy'],
+        "welcome_text": data['welcome_text'],
+        "maintenance_mode": data.get('maintenance_mode', False)
+    }
+    config['groups'].append(new_group)
+    with open('config.json', 'w') as file:
+        json.dump(config, file, indent=4)
+    return jsonify({'status': 'success', 'group': new_group}), 200
+
+# /api/groups/<group_id>/edit
+@api_bp.route('/groups/<group_id>/edit', methods=['POST'])
+def edit_group(group_id):
+    """
+    Edit group
+    ---
+    post:
+      description: Edits a group's name, welcome text, maximum occupancy, and maintenance mode status
+      parameters:
+        - in: path
+          name: group_id
+          schema:
+            type: integer
+          required: true
+          description: The ID of the group to edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: The new name of the group
+                  example: Group 1
+                welcome_text:
+                  type: string
+                  description: The new welcome text of the group
+                  example: Welcome to Group 1
+                max_occupancy:
+                  type: integer
+                  description: The new maximum occupancy of the group
+                  example: 10
+                maintenance_mode:
+                  type: boolean
+                  description: The new maintenance mode status of the group
+                  example: false
+      responses:
+        200:
+          description: Group edited
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the edit operation
+                    example: success
+        404:
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Group not found
+    """
+    data = request.json
+    with open('config.json', 'r') as file:
+        config = json.load(file)
+    
+    group = next((g for g in config['groups'] if str(g['group_id']) == group_id), None)
+    if group:
+        group['name'] = data.get('name', group['name'])
+        group['welcome_text'] = data.get('welcome_text', group['welcome_text'])
+        group['max_occupancy'] = data.get('max_occupancy', group['max_occupancy'])
+        group['maintenance_mode'] = data.get('maintenance_mode', group.get('maintenance_mode', False))
+        
+        with open('config.json', 'w') as file:
+            json.dump(config, file, indent=4)
+        
+        log_change(f"Group {group_id} edited: name={group['name']}, welcome_text={group['welcome_text']}, max_occupancy={group['max_occupancy']}, maintenance_mode={group['maintenance_mode']}")
+        return jsonify({'status': 'success'}), 200
+    return jsonify({'status': 'error', 'message': 'Group not found'}), 404
+
+# /api/groups/<group_id>/delete
+@api_bp.route('/groups/<group_id>/delete', methods=['DELETE'])
+def delete_group(group_id):
+    """
+    Delete group
+    ---
+    delete:
+      description: Deletes a group
+      parameters:
+        - in: path
+          name: group_id
+          schema:
+            type: integer
+          required: true
+          description: The ID of the group to delete
+      responses:
+        200:
+          description: Group deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the delete operation
+                    example: success
+        404:
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Group not found
+    """
+    with open('config.json', 'r') as file:
+        config = json.load(file)
+    group = next((g for g in config['groups'] if g['group_id'] == group_id), None)
+    if group:
+        for sensor in config['sensors']:
+            if sensor['group_id'] == group_id:
+                default_group = next((g for g in config['groups'] if g['group_id'] == '0'), None)
+                if not default_group:
+                    default_group = {
+                    "group_id": "0",
+                    "name": "Standardgruppe",
+                    "max_occupancy": 100,
+                    "welcome_text": "keine Gruppe zugeordnet",
+                    "maintenance_mode": False
+                }
+                config['groups'].append(default_group)
+                sensor['group_id'] = 0
+        config['groups'] = [g for g in config['groups'] if g['group_id'] != group_id]
+        with open('config.json', 'w') as file:
+            json.dump(config, file, indent=4)
+        return jsonify({'status': 'success'}), 200
+    return jsonify({'status': 'error', 'message': 'Group not found'}), 404
+
+# /api/groups/<group_id>/toggle_maintenance_mode
+@api_bp.route('/groups/<group_id>/toggle_maintenance_mode', methods=['POST'])
+def toggle_maintenance_mode(group_id):
+    """
+    Toggle maintenance mode
+    ---
+    post:
+      description: Toggles the maintenance mode of a group
+      parameters:
+        - in: path
+          name: group_id
+          schema:
+            type: integer
+          required: true
+          description: The ID of the group to toggle maintenance mode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                maintenance_mode:
+                  type: boolean
+                  description: The new maintenance mode status of the group
+                  example: true
+      responses:
+        200:
+          description: Maintenance mode toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the toggle operation
+                    example: success
+        404:
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Group not found
+    """
+    data = request.json
+    with open('config.json', 'r') as file:
+        config = json.load(file)
+    group = next((g for g in config['groups'] if str(g['group_id']) == group_id), None)
+    if group:
+        group['maintenance_mode'] = data['maintenance_mode']
+        with open('config.json', 'w') as file:
+            json.dump(config, file, indent=4)
+        log_change(f"Group {group_id} maintenance mode set to {data['maintenance_mode']}")
+        return jsonify({'status': 'success'}), 200
+    return jsonify({'status': 'error', 'message': 'Group not found'}), 404
+
+# /api/groups/ygroup_id>/update-settings
+@api_bp.route('/groups/<group_id>/update-settings', methods=['POST'])
+def update_group_settings(group_id):
+    """
+    Update group settings
+    ---
+    post:
+      description: Updates a group's name, maximum occupancy, welcome text, and maintenance mode status
+      parameters:
+        - in: path
+          name: group_id
+          schema:
+            type: integer
+          required: true
+          description: The ID of the group to update settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: The new name of the group
+                  example: Group 1
+                max_occupancy:
+                  type: integer
+                  description: The new maximum occupancy of the group
+                  example: 10
+                welcome_text:
+                  type: string
+                  description: The new welcome text of the group
+                  example: Welcome to Group 1
+                maintenance_mode:
+                  type: boolean
+                  description: The new maintenance mode status of the group
+                  example: false
+      responses:
+        200:
+          description: Group settings updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the update operation
+                    example: success
+        404:
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Group not found
+    """
+    data = request.json
+    with open('config.json', 'r') as file:
+        config = json.load(file)
+    for group in config['groups']:
+        if str(group['group_id']) == group_id:
+            group['name'] = data.get('name', group['name'])
+            group['max_occupancy'] = data.get('max_occupancy', group['max_occupancy'])
+            group['welcome_text'] = data.get('welcome_text', group['welcome_text'])
+            group['maintenance_mode'] = data.get('maintenance_mode', group.get('maintenance_mode', False))
+            break
+        else:
+            return jsonify({'status': 'error', 'message': 'Group not found'}), 404
+    with open('config.json', 'w') as file:
+        json.dump(config, file, indent=4)
+    log_change(f"Group {group_id} settings updated: name={data.get('name')}, max_occupancy={data.get('max_occupancy')}, welcome_text={data.get('welcome_text')}, maintenance_mode={data.get('maintenance_mode')}")
+    return jsonify({'status': 'success'}), 200
+
+# /api/schedules
+@api_bp.route('/schedules')
+def get_schedulers():
+    """
+    Get schedulers
+    ---
+    get:
+      description: Returns a JSON object with schedulers
+      responses:
+        200:
+          description: Schedulers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedulers:
+                    type: array
+                    description: An array of schedulers
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          example: 1
+                        action:
+                          type: string
+                          example: reboot
+                        interval:
+                          type: integer
+                          example: 60
+                        day:
+                          type: string
+                          example: Monday
+                        time:
+                          type: string
+                          example: 08:00
+                        sensors:
+                          type: array
+                          items:
+                            type: integer
+                            example: 1
+        500:
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Error message
+    """
+    with open('config.json', 'r') as file:
+        config = json.load(file)
+    return jsonify({'schedules': config.get('schedules', [])}), 200
+
+# /api/schedules/add
+@api_bp.route('/schedules/add', methods=['PUT'])
+def add_schedule():
+    """
+    Add schedule
+    ---
+    put:"
+    "description: Adds a schedule"
+    "requestBody:"
+    "required: true"
+    "content:"
+    "application/json:"
+    "schema:"
+    "type: object"
+    "properties:"
+    "action:"
+    "type: string"
+    "description: The action to perform"
+    "example: reboot"
+    "interval:"
+    "type: integer"
+    "description: The interval in seconds"
+    "example: 60"
+    "day:"
+    "type: string"
+    "description: The day of the week"
+    "example: Monday"
+    "time:"
+    "type: string"
+    "description: The time of day"
+    "example: 08:00"
+    "sensors:"
+    "type: array"
+    "description: An array of sensor IDs"
+    "items:"
+    "type: integer"
+    "example: 1
+    "responses:"
+    "200:"
+    "description: Schedule added"
+    "content:"
+    "application/json:"
+    "schema:"
+    "type: object"
+    "properties:"
+    "status:"
+    "type: string"
+    "description: The status of the add operation"
+    "example: success
+    "schedule:"
+    "type: object"
+    "description: The added schedule"
+    "properties:"
+    "id:"
+    "type: integer"
+    "example: 1
+    "action:"
+    "type: string"
+    "example: reboot
+    "interval:"
+    "type: integer"
+    "example: 60
+    "day:"
+    "type: string"
+    "example: Monday
+    "time:"
+    "type: string"
+    "example: 08:00
+    "sensors:"
+    "type: array"
+    "items:"
+    "type: integer"
+    "example: 1
+    "500:"
+    "description: Internal server error"
+    "content:"
+    "application/json:"
+    "schema:"
+    "type: object"
+    "properties:"
+    "error:"
+    "type: string"
+    "example: Error message
+    """
+
+    data = request.json
+    with open('config.json', 'r') as file:
+        config = json.load(file)
+    
+    # Find the next available integer for schedule_id
+    existing_schedule_ids = [schedule['id'] for schedule in config.get('schedules', [])]
+    next_schedule_id = max(existing_schedule_ids) + 1 if existing_schedule_ids else 1
+
+    new_schedule = {
+        "id": next_schedule_id,  # Use the next available integer
+        "action": data['action'],
+        "interval": data['interval'],
+        "day": data['day'],
+        "time": data['time'],
+        "sensors": data['sensors']
+    }
+    if 'schedules' not in config:
+        config['schedules'] = []
+    config['schedules'].append(new_schedule)
+    with open('config.json', 'w') as file:
+        json.dump(config, file, indent=4)
+    
+    # Add the new schedule to the scheduler
+    add_schedule(new_schedule)
+    
+    return jsonify({'status': 'success', 'schedule': new_schedule}), 200
+
+# /api/schedules/<schedule_id>/edit
+@api_bp.route('/schedules/<schedule_id>/edit', methods=['POST'])
+def edit_schedule(schedule_id):
+    """
+    Edit schedule
+    ---
+    post:
+      description: Edits a schedule's action, interval, day, time, and sensor IDs
+      parameters:
+        - in: path
+          name: schedule_id
+          schema:
+            type: integer
+          required: true
+          description: The ID of the schedule to edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action:
+                  type: string
+                  description: The new action to perform
+                  example: reboot
+                interval:
+                  type: integer
+                  description: The new interval in seconds
+                  example: 60
+                day:
+                  type: string
+                  description: The new day of the week
+                  example: Monday
+                time:
+                  type: string
+                  description: The new time of day
+                  example: 08:00
+                sensors:
+                  type: array
+                  description: An array of sensor IDs
+                  items:
+                    type: integer
+                    example: 1
+      responses:
+        200:
+          description: Schedule edited
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the edit operation
+                    example: success
+        404:
+          description: Schedule not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Schedule not found
+    """
+    data = request.json
+    with open('config.json', 'r') as file:
+        config = json.load(file)
+    
+    schedules = config.get('schedules', [])
+    for schedule in schedules:
+        if schedule['id'] == schedule_id:
+            schedule.update(data)
+            break
+    else:
+        return jsonify({'status': 'error', 'message': 'Schedule not found'}), 404
+    
+    with open('config.json', 'w') as file:
+        json.dump(config, file, indent=4)
+    
+    # Edit the schedule in the scheduler
+    edit_schedule(schedule_id, data)
+    
+    return jsonify({'status': 'success', 'schedule': data}), 200
+
+# /api/schedules/<schedule_id>/delete
+@api_bp.route('/schedules/<schedule_id>/delete', methods=['DELETE'])
+def delete_schedule(schedule_id):
+    """
+    Delete schedule
+    ---
+    delete:
+      description: Deletes a schedule
+      parameters:
+        - in: path
+          name: schedule_id
+          schema:
+            type: integer
+          required: true
+          description: The ID of the schedule to delete
+      responses:
+        200:
+          description: Schedule deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the delete operation
+                    example: success
+        404:
+          description: Schedule not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Schedule not found
+    """
+    with open('config.json', 'r') as file:
+        config = json.load(file)
+    schedules = config.get('schedules', [])
+    schedules = [schedule for schedule in schedules if schedule.get('id') != schedule_id]
+    config['schedules'] = schedules
+    with open('config.json', 'w') as file:
+        json.dump(config, file, indent=4)
+    
+    # Delete the schedule from the scheduler
+    delete_schedule(schedule_id)
+    
+    return jsonify({'status': 'success'})

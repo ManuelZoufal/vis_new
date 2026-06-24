@@ -1,0 +1,137 @@
+@import url('base.css');
+
+body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 20px;
+    color: #333;
+    font-size: 4em; /* Verdoppelte Schriftgröße */
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    max-width: 1600px;
+    max-height: 1000px;
+}
+
+.chart-container {
+    width: auto;
+    max-width: 30%;
+    height: 50%;
+    margin-bottom: 20px;
+}
+
+.percentage-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+    width: auto;
+    max-width: 40%;
+}
+
+.percentage-text {
+    font-size: 2em;
+    margin-bottom: 10px;
+}
+
+.percentage {
+    font-size: 8em;
+}
+
+.traffic-light-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: auto;
+    max-width: 30%;
+}
+
+.traffic-light {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 200px;
+}
+
+.light {
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    margin: 20px 0;
+}
+
+.light.red {
+    background-color: rgba(255, 0, 0, 0.25);
+}
+
+.light.green {
+    background-color: rgba(0, 255, 0, 0.25);
+}
+
+.light.active.red {
+    background-color: rgba(255, 0, 0, 1);
+}
+
+.light.active.green {
+    background-color: rgba(0, 255, 0, 1);
+}
+
+.status-text {
+    font-size: 2em;
+    margin-top: 20px;
+}
+
+.maintenance-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+}
+
+.maintenance-image {
+    max-width: 50%;
+    height: auto;
+    margin-bottom: 20px;
+}
+
+@media (min-width: 600px) {
+    .container {
+        flex-direction: row;
+        justify-content: space-around;
+    }
+
+    .chart-container {
+        margin-bottom: 0;
+    }
+
+    .percentage-container {
+        margin-bottom: 0;
+    }
+
+    .traffic-light-container {
+        margin-bottom: 0;
+    }
+}
+
+.marquee-container {
+    height: 7%;
+}
+
+marquee {
+    width: 100%;
+    font-size: 2em;
+}
