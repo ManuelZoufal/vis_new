@@ -1371,20 +1371,25 @@ def edit_schedule_route(schedule_id):
     data = request.json
     with open('config.json', 'r') as file:
         config = json.load(file)
-    
+
+    try:
+        schedule_id_int = int(schedule_id)
+    except (ValueError, TypeError):
+        return jsonify({'status': 'error', 'message': 'Invalid schedule ID'}), 400
+
     schedules = config.get('schedules', [])
     for schedule in schedules:
-        if schedule['id'] == schedule_id:
+        if schedule['id'] == schedule_id_int:
             schedule.update(data)
             break
     else:
         return jsonify({'status': 'error', 'message': 'Schedule not found'}), 404
-    
+
     with open('config.json', 'w') as file:
         json.dump(config, file, indent=4)
-    
+
     # Edit the schedule in the scheduler
-    scheduler_edit_schedule(schedule_id, data)
+    scheduler_edit_schedule(schedule_id_int, data)
 
     return jsonify({'status': 'success', 'schedule': data}), 200
 
@@ -1432,7 +1437,11 @@ def delete_schedule_route(schedule_id):
     with open('config.json', 'r') as file:
         config = json.load(file)
     schedules = config.get('schedules', [])
-    schedules = [schedule for schedule in schedules if schedule.get('id') != schedule_id]
+    try:
+        schedule_id_int = int(schedule_id)
+    except (ValueError, TypeError):
+        return jsonify({'status': 'error', 'message': 'Invalid schedule ID'}), 400
+    schedules = [schedule for schedule in schedules if schedule.get('id') != schedule_id_int]
     config['schedules'] = schedules
     with open('config.json', 'w') as file:
         json.dump(config, file, indent=4)

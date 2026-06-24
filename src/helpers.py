@@ -30,14 +30,11 @@ def get_local_ip():
     return local_ip
 
 def log_change(message):
-    """
-    Log changes to a file
-    
-    Args:
-    message (str): Message to log
-    """
-    with open('change_log.txt', 'a') as log_file:
-        log_file.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {message}\n")
+    try:
+        with open('change_log.txt', 'a') as log_file:
+            log_file.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {message}\n")
+    except Exception as e:
+        print(f"[LOG ERROR] Could not write to change_log.txt: {e}")
 
 def login_required(role=None):
     """
