@@ -60,5 +60,17 @@
     </div>
 </div>
 
+<!-- Images Modal -->
+<div id="imagesModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal('imagesModal')">&times;</span>
+        <h2 id="imagesModalTitle">Anzeigebilder</h2>
+        <p style="color:#666;margin-bottom:16px;">Bis zu 3 Bilder für die Visualisierungsanzeige (optional). Erlaubte Formate: PNG, JPG, GIF, WebP.</p>
+        <div id="image-slots-container">
+            <!-- Slots 0, 1, 2 rendered by JS -->
+        </div>
+    </div>
+</div>
+
     <script src="{{ url_for('static', filename='js/group_settings.js') }}"></script>
     {% endblock %}

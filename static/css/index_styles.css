@@ -1,68 +1,106 @@
 @import url('base.css');
 
+* {
+    box-sizing: border-box;
+}
+
 body {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
     height: 100vh;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #f4f4f4;
+    font-family: Arial, sans-serif;
 }
 
 h1 {
     text-align: center;
-    margin-bottom: 20px;
     color: #333;
-    font-size: 4em; /* Verdoppelte Schriftgröße */
+    font-size: 3em;
+    margin: 10px 0;
+    flex-shrink: 0;
 }
 
-.container {
+/* ── Main 3-column layout ── */
+.main-layout {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    min-height: 0;
+    padding: 10px 20px;
+    gap: 20px;
+    align-items: center;
+}
+
+/* ── Left: image panel ── */
+.images-panel {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    width: 200px;
+    flex-shrink: 0;
+}
+
+.images-panel:empty {
+    width: 0;
+    gap: 0;
+}
+
+.display-image {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    object-fit: contain;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* ── Center: chart panel ── */
+.chart-panel {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
-    max-width: 1600px;
-    max-height: 1000px;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
 }
 
-.chart-container {
-    width: auto;
-    max-width: 30%;
-    height: 50%;
-    margin-bottom: 20px;
-}
-
-.percentage-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: 20px;
-    width: auto;
-    max-width: 40%;
-}
-
-.percentage-text {
+.occupancy-label {
     font-size: 2em;
+    font-weight: bold;
+    color: #333;
+    text-align: center;
     margin-bottom: 10px;
 }
 
-.percentage {
-    font-size: 8em;
+.chart-container {
+    position: relative;
+    width: min(100%, 420px);
+    aspect-ratio: 1 / 1;
 }
 
+.chart-container canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* ── Right: traffic light ── */
 .traffic-light-container {
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: auto;
-    max-width: 30%;
+    flex-shrink: 0;
 }
 
 .traffic-light {
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: 240px;
+    width: 200px;
     background-color: #1a1a1a;
     border: 6px solid #555;
     border-radius: 20px;
@@ -71,10 +109,10 @@ h1 {
 }
 
 .light {
-    width: 160px;
-    height: 160px;
+    width: 130px;
+    height: 130px;
     border-radius: 50%;
-    margin: 14px 0;
+    margin: 12px 0;
     border: 4px solid #333;
     box-shadow: inset 0 2px 8px rgba(0,0,0,0.6);
 }
@@ -98,16 +136,18 @@ h1 {
 }
 
 .status-text {
-    font-size: 2em;
-    margin-top: 20px;
+    font-size: 1.6em;
+    margin-top: 16px;
+    text-align: center;
 }
 
+/* ── Maintenance ── */
 .maintenance-section {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
+    flex: 1;
     text-align: center;
 }
 
@@ -117,27 +157,10 @@ h1 {
     margin-bottom: 20px;
 }
 
-@media (min-width: 600px) {
-    .container {
-        flex-direction: row;
-        justify-content: space-around;
-    }
-
-    .chart-container {
-        margin-bottom: 0;
-    }
-
-    .percentage-container {
-        margin-bottom: 0;
-    }
-
-    .traffic-light-container {
-        margin-bottom: 0;
-    }
-}
-
+/* ── Marquee ── */
 .marquee-container {
-    height: 7%;
+    flex-shrink: 0;
+    padding: 6px 0;
 }
 
 marquee {

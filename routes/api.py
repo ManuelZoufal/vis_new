@@ -6,6 +6,7 @@ from src.scheduler import add_schedule as scheduler_add_schedule, edit_schedule 
 from src.database import get_connection, save_sensor_values
 
 from flask import jsonify, session, request, send_file
+from werkzeug.utils import secure_filename
 from datetime import datetime, timezone, timedelta
 from threading import enumerate as enumerate_threads
 import json
@@ -1450,3 +1451,90 @@ def delete_schedule_route(schedule_id):
         pass
 
     return jsonify({'status': 'success', 'schedules': schedules})
+
+
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+UPLOAD_FOLDER = 'static/uploads'
+MAX_DISPLAY_IMAGES = 3
+
+
+def _allowed_image(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+
+
+# /api/groups/<group_id>/display_images  (POST = upload, GET = list)
+@api_bp.route('/groups/<group_id>/display_images', methods=['GET', 'POST'])
+def group_display_images(group_id):
+    with open('config.json', 'r') as f:
+        config = json.load(f)
+    group = next((g for g in config['groups'] if str(g['group_id']) == str(group_id)), None)
+    if not group:
+        return jsonify({'status': 'error', 'message': 'Group not found'}), 404
+
+    if request.method == 'GET':
+        images = group.get('display_images', [None, None, None])
+        return jsonify({'status': 'success', 'display_images': images}), 200
+
+    # POST: upload image to a slot
+    slot = request.form.get('slot')
+    if slot is None or not slot.isdigit() or not (0 <= int(slot) < MAX_DISPLAY_IMAGES):
+        return jsonify({'status': 'error', 'message': 'Invalid slot (0-2)'}), 400
+    slot = int(slot)
+
+    file = request.files.get('file')
+    if not file or file.filename == '':
+        return jsonify({'status': 'error', 'message': 'No file provided'}), 400
+    if not _allowed_image(file.filename):
+        return jsonify({'status': 'error', 'message': 'File type not allowed'}), 400
+
+    ext = file.filename.rsplit('.', 1)[1].lower()
+    filename = f"group_{group_id}_img_{slot}.{ext}"
+    import os
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+    # Remove old image file for this slot if different extension
+    images = group.get('display_images', [None, None, None])
+    while len(images) < MAX_DISPLAY_IMAGES:
+        images.append(None)
+    old = images[slot]
+    if old and old != filename:
+        old_path = os.path.join(UPLOAD_FOLDER, old)
+        if os.path.exists(old_path):
+            os.remove(old_path)
+
+    file.save(os.path.join(UPLOAD_FOLDER, filename))
+    images[slot] = filename
+    group['display_images'] = images
+    with open('config.json', 'w') as f:
+        json.dump(config, f, indent=4)
+    log_change(f"Group {group_id} display image slot {slot} updated: {filename}")
+    return jsonify({'status': 'success', 'display_images': images}), 200
+
+
+# /api/groups/<group_id>/display_images/<int:slot>  (DELETE)
+@api_bp.route('/groups/<group_id>/display_images/<int:slot>', methods=['DELETE'])
+def delete_group_display_image(group_id, slot):
+    if not (0 <= slot < MAX_DISPLAY_IMAGES):
+        return jsonify({'status': 'error', 'message': 'Invalid slot (0-2)'}), 400
+    with open('config.json', 'r') as f:
+        config = json.load(f)
+    group = next((g for g in config['groups'] if str(g['group_id']) == str(group_id)), None)
+    if not group:
+        return jsonify({'status': 'error', 'message': 'Group not found'}), 404
+
+    images = group.get('display_images', [None, None, None])
+    while len(images) < MAX_DISPLAY_IMAGES:
+        images.append(None)
+
+    old = images[slot]
+    if old:
+        import os
+        old_path = os.path.join(UPLOAD_FOLDER, old)
+        if os.path.exists(old_path):
+            os.remove(old_path)
+    images[slot] = None
+    group['display_images'] = images
+    with open('config.json', 'w') as f:
+        json.dump(config, f, indent=4)
+    log_change(f"Group {group_id} display image slot {slot} deleted")
+    return jsonify({'status': 'success', 'display_images': images}), 200

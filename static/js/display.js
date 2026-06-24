@@ -5,18 +5,19 @@ async function fetchOccupancy(groupId) {
             throw new Error('Network response was not ok');
         }
         const data = await response.json();
-        const group = data.groups.find(g => g.group_id === groupId);
+        const group = data.groups.find(g => String(g.group_id) === String(groupId));
         if (!group) {
             throw new Error('Group not found');
         }
         const total_occupancy = data.sensors
-            .filter(sensor => sensor.group_id === groupId)
+            .filter(sensor => String(sensor.group_id) === String(groupId))
             .reduce((sum, sensor) => sum + sensor.occupancy, 0);
         return {
             total_occupancy,
             max_occupancy: group.max_occupancy,
             welcome_text: group.welcome_text,
-            maintenance_mode: group.maintenance_mode
+            maintenance_mode: group.maintenance_mode,
+            display_images: group.display_images || []
         };
     } catch (error) {
         console.error('Fetch occupancy failed:', error);
@@ -31,8 +32,22 @@ function activateMaintenanceMode() {
 }
 
 function deactivateMaintenanceMode() {
-    document.getElementById('visualization-section').style.display = 'block';
+    document.getElementById('visualization-section').style.display = 'flex';
     document.getElementById('maintenance-section').style.display = 'none';
+}
+
+function updateImages(displayImages) {
+    const panel = document.getElementById('images-panel');
+    panel.innerHTML = '';
+    (displayImages || []).forEach(filename => {
+        if (filename) {
+            const img = document.createElement('img');
+            img.src = `/static/uploads/${filename}`;
+            img.alt = '';
+            img.className = 'display-image';
+            panel.appendChild(img);
+        }
+    });
 }
 
 function updateChart(chart, data) {
@@ -48,16 +63,11 @@ function updateChart(chart, data) {
         visualizationSection.style.display = 'flex';
         greeting.innerText = data.welcome_text;
 
-        chart.data.datasets[0].data = [Math.max(0, data.total_occupancy), Math.max(0, data.max_occupancy - data.total_occupancy)];
+        chart.data.datasets[0].data = [
+            Math.max(0, data.total_occupancy),
+            Math.max(0, data.max_occupancy - data.total_occupancy)
+        ];
         chart.update();
-        const percentage = Math.max(0, Math.round((data.total_occupancy / data.max_occupancy) * 100));
-        const percentageElement = document.getElementById('percentage');
-        percentageElement.innerText = `${percentage}%`;
-        if (data.total_occupancy >= data.max_occupancy) {
-            percentageElement.style.color = 'red';
-        } else {
-            percentageElement.style.color = 'green';
-        }
     }
 }
 
@@ -90,10 +100,9 @@ function updateMarqueeText() {
     xhr.send();
 }
 
-
 async function init() {
     const urlParams = new URLSearchParams(window.location.search);
-    const groupId = urlParams.get('group_id') || '1';  // Default group_id is '1'
+    const groupId = urlParams.get('group_id') || '1';
     try {
         const data = await fetchOccupancy(groupId);
         deactivateMaintenanceMode();
@@ -102,15 +111,30 @@ async function init() {
             id: 'centerText',
             afterDraw(chart) {
                 const { ctx, chartArea: { left, top, width, height } } = chart;
+                const meta = chart.getDatasetMeta(0);
+                if (!meta.data || !meta.data[0]) return;
+                const innerRadius = meta.data[0].innerRadius;
                 const total = chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
                 const value = chart.data.datasets[0].data[0];
                 const pct = total > 0 ? Math.round(value / total * 100) : 0;
+                const text = `${pct}%`;
+                const color = pct >= 100 ? '#ff2020' : '#009999';
+
+                // Scale font to fill the inner circle
+                let fontSize = Math.floor(innerRadius * 1.3);
+                ctx.font = `bold ${fontSize}px Arial`;
+                const textWidth = ctx.measureText(text).width;
+                const maxWidth = innerRadius * 1.8;
+                if (textWidth > maxWidth) {
+                    fontSize = Math.floor(fontSize * maxWidth / textWidth);
+                }
+
                 ctx.save();
-                ctx.font = 'bold 2.5em Arial';
-                ctx.fillStyle = pct >= 100 ? '#ff2020' : '#009999';
+                ctx.font = `bold ${fontSize}px Arial`;
+                ctx.fillStyle = color;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(`${pct}%`, left + width / 2, top + height / 2);
+                ctx.fillText(text, left + width / 2, top + height / 2);
                 ctx.restore();
             }
         };
@@ -128,6 +152,8 @@ async function init() {
             },
             options: {
                 cutout: '70%',
+                responsive: true,
+                maintainAspectRatio: true,
                 plugins: {
                     datalabels: { display: false },
                     legend: { display: false }
@@ -136,14 +162,16 @@ async function init() {
             plugins: [centerTextPlugin]
         });
 
+        updateImages(data.display_images);
         updateChart(occupancyChart, data);
         updateTrafficLight(data.total_occupancy, data.max_occupancy);
-        setInterval(updateMarqueeText, 5000); // Aktualisiere alle 5 Sekunden
+        setInterval(updateMarqueeText, 5000);
 
         setInterval(async () => {
             try {
                 const newData = await fetchOccupancy(groupId);
                 deactivateMaintenanceMode();
+                updateImages(newData.display_images);
                 updateChart(occupancyChart, newData);
                 updateTrafficLight(newData.total_occupancy, newData.max_occupancy);
             } catch (error) {
@@ -154,6 +182,5 @@ async function init() {
         console.error('Initialization failed:', error);
     }
 }
-
 
 init();

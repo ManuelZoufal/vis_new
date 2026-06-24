@@ -10,7 +10,7 @@ async function fetchGroupData() {
     sensors = data.sensors;
     const groupList = document.getElementById('group-list');
     groupList.innerHTML = '';
-    data.groups.sort((a, b) => a.group_id.localeCompare(b.group_id)).forEach(group => {
+    data.groups.sort((a, b) => String(a.group_id).localeCompare(String(b.group_id))).forEach(group => {
         const currentOccupancy = calculateCurrentOccupancy(group.group_id, data.sensors);
         const occupancyPercentage = calculateOccupancyPercentage(currentOccupancy, group.max_occupancy);
         const tr = document.createElement('tr');
@@ -20,7 +20,7 @@ async function fetchGroupData() {
             <td>${group.max_occupancy}</td>
             <td>${currentOccupancy}</td>
             <td>${occupancyPercentage}%</td>
-            <td>${group.welcome_text}</td>
+            <td>${group.welcome_text || ''}</td>
             <td>
                 <label class="switch">
                     <input type="checkbox" ${group.maintenance_mode ? 'checked' : ''} onclick="toggleMaintenanceMode('${group.group_id}', this.checked)">
@@ -29,6 +29,7 @@ async function fetchGroupData() {
             </td>
             <td>
                 <button class="button button-secondary" onclick="openGroupModal('${group.group_id}')">Bearbeiten</button>
+                <button class="button button-warning" onclick="openImagesModal('${group.group_id}')">Bilder</button>
                 <button class="button button-danger" onclick="confirmDeleteGroup('${group.group_id}')">Löschen</button>
             </td>
         `;
@@ -49,12 +50,12 @@ function openGroupModal(groupId = null) {
     const form = document.getElementById('groupForm');
     form.reset();
     if (groupId) {
-        const group = groups.find(g => g.group_id === groupId);
+        const group = groups.find(g => String(g.group_id) === String(groupId));
         document.getElementById('groupModalTitle').innerText = `Gruppen Einstellungen für Gruppe ${group.name}`;
         document.getElementById('groupId').value = group.group_id;
         document.getElementById('groupName').value = group.name;
         document.getElementById('groupMaxOccupancy').value = group.max_occupancy;
-        document.getElementById('groupWelcomeText').value = group.welcome_text;
+        document.getElementById('groupWelcomeText').value = group.welcome_text || '';
         document.getElementById('groupMaintenanceMode').checked = group.maintenance_mode;
     } else {
         document.getElementById('groupModalTitle').innerText = 'Neue Gruppe hinzufügen';
@@ -133,13 +134,83 @@ async function toggleMaintenanceMode(groupId, isChecked) {
     }
 }
 
-fetchGroupData();
-setInterval(fetchGroupData, 1000);  // Refresh data every second
+// ── Image management ──
 
-// Close the modal when clicking outside of it
-window.onclick = function(event) {
-    const groupModal = document.getElementById('groupModal');
-    if (event.target === groupModal) {
-        groupModal.style.display = 'none';
+let imagesGroupId = null;
+
+async function openImagesModal(groupId) {
+    imagesGroupId = groupId;
+    const group = groups.find(g => String(g.group_id) === String(groupId));
+    document.getElementById('imagesModalTitle').innerText = `Anzeigebilder – Gruppe ${group ? group.name : groupId}`;
+    await renderImageSlots(groupId);
+    document.getElementById('imagesModal').style.display = 'block';
+}
+
+async function renderImageSlots(groupId) {
+    const response = await fetch(`/api/groups/${groupId}/display_images`);
+    const data = await response.json();
+    const images = data.display_images || [null, null, null];
+    const container = document.getElementById('image-slots-container');
+    container.innerHTML = '';
+    for (let slot = 0; slot < 3; slot++) {
+        const filename = images[slot] || null;
+        const div = document.createElement('div');
+        div.style.cssText = 'border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:12px;';
+        div.innerHTML = `
+            <strong>Bild ${slot + 1}</strong><br>
+            ${filename
+                ? `<img src="/static/uploads/${filename}" alt="Bild ${slot + 1}" style="max-width:200px;max-height:120px;margin:8px 0;display:block;border-radius:4px;">
+                   <button class="button button-danger" onclick="deleteImage(${slot})" style="padding:6px 12px;font-size:0.9em;">Löschen</button>`
+                : '<span style="color:#999;font-size:0.9em;">Kein Bild</span>'
+            }
+            <div style="margin-top:8px;">
+                <input type="file" id="file-input-${slot}" accept="image/*" style="display:none;" onchange="uploadImage(${slot})">
+                <button class="button button-secondary" onclick="document.getElementById('file-input-${slot}').click()" style="padding:6px 12px;font-size:0.9em;">
+                    ${filename ? 'Ersetzen' : 'Hochladen'}
+                </button>
+            </div>
+        `;
+        container.appendChild(div);
     }
 }
+
+async function uploadImage(slot) {
+    const fileInput = document.getElementById(`file-input-${slot}`);
+    const file = fileInput.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('slot', slot);
+    const response = await fetch(`/api/groups/${imagesGroupId}/display_images`, {
+        method: 'POST',
+        body: formData
+    });
+    if (response.ok) {
+        await renderImageSlots(imagesGroupId);
+    } else {
+        const err = await response.json();
+        alert('Fehler beim Hochladen: ' + (err.message || 'Unbekannter Fehler'));
+    }
+}
+
+async function deleteImage(slot) {
+    if (!confirm(`Bild ${slot + 1} wirklich löschen?`)) return;
+    const response = await fetch(`/api/groups/${imagesGroupId}/display_images/${slot}`, {
+        method: 'DELETE'
+    });
+    if (response.ok) {
+        await renderImageSlots(imagesGroupId);
+    } else {
+        alert('Fehler beim Löschen des Bildes');
+    }
+}
+
+fetchGroupData();
+setInterval(fetchGroupData, 1000);
+
+window.onclick = function(event) {
+    ['groupModal', 'imagesModal'].forEach(id => {
+        const modal = document.getElementById(id);
+        if (event.target === modal) modal.style.display = 'none';
+    });
+};
