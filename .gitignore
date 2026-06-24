@@ -1,0 +1,55 @@
+# ============================================================
+# .gitignore für vis_new (Flask / Python)
+# Zugeschnitten auf die im Repo tatsächlich gefundenen Artefakte.
+# ============================================================
+
+# --- Geheimnisse & Zertifikate (NICHT versionieren!) ---
+# Hinweis: .env, *.pem und *.crt sind aktuell bereits getrackt.
+# Diese Regeln verhindern nur KÜNFTIGES Hinzufügen. Zum Entfernen
+# aus der Versionierung siehe Kommentar am Dateiende.
+.env
+.env.*
+!.env.example
+*.pem
+*.crt
+*.key
+
+# --- Python Bytecode / Cache ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtuelle Umgebungen ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- SQLite Datenbank (wird zur Laufzeit erzeugt) ---
+sensor_data.db
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Laufzeit-Uploads (siehe helpers.py: static/uploads) ---
+static/uploads/
+
+# --- IDE / Editor ---
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- Logs ---
+*.log
+
+# --- Betriebssystem ---
+.DS_Store
+Thumbs.db
+
+# --- Python Packaging / Tools ---
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+build/
+dist/
