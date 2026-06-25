@@ -180,16 +180,22 @@ async function uploadImage(slot) {
     if (!file) return;
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('slot', slot);
-    const response = await fetch(`/api/groups/${imagesGroupId}/display_images`, {
-        method: 'POST',
-        body: formData
-    });
-    if (response.ok) {
-        await renderImageSlots(imagesGroupId);
-    } else {
-        const err = await response.json();
-        alert('Fehler beim Hochladen: ' + (err.message || 'Unbekannter Fehler'));
+    formData.append('slot', String(slot));
+    try {
+        const response = await fetch(`/api/groups/${imagesGroupId}/display_images`, {
+            method: 'POST',
+            body: formData,
+            redirect: 'error'
+        });
+        if (response.ok) {
+            await renderImageSlots(imagesGroupId);
+        } else {
+            let msg = `HTTP ${response.status}`;
+            try { const err = await response.json(); msg = err.message || msg; } catch (_) {}
+            alert('Fehler beim Hochladen: ' + msg);
+        }
+    } catch (e) {
+        alert('Fehler beim Hochladen: ' + e.message);
     }
 }
 

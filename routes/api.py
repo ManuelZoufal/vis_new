@@ -13,6 +13,7 @@ import json
 import sqlite3
 import socket
 import io
+import os
 
 
 # /api
@@ -1489,7 +1490,6 @@ def group_display_images(group_id):
 
     ext = file.filename.rsplit('.', 1)[1].lower()
     filename = f"group_{group_id}_img_{slot}.{ext}"
-    import os
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
     # Remove old image file for this slot if different extension
@@ -1528,7 +1528,6 @@ def delete_group_display_image(group_id, slot):
 
     old = images[slot]
     if old:
-        import os
         old_path = os.path.join(UPLOAD_FOLDER, old)
         if os.path.exists(old_path):
             os.remove(old_path)
