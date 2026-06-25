@@ -7,19 +7,35 @@
 body {
     display: flex;
     flex-direction: column;
+    align-items: center;
+    justify-content: center;
     height: 100vh;
     margin: 0;
-    padding: 0;
+    padding: 20px;
     overflow: hidden;
     background-color: #f4f4f4;
     font-family: Arial, sans-serif;
+}
+
+/* Outer container card – mirrors the old layout wrapper */
+.visualization-wrapper {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 1600px;
+    max-height: calc(100vh - 40px);
+    background-color: #fff;
+    border-radius: 12px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.15);
+    padding: 20px;
+    overflow: hidden;
 }
 
 h1 {
     text-align: center;
     color: #333;
     font-size: 3em;
-    margin: 10px 0;
+    margin: 0 0 16px 0;
     flex-shrink: 0;
 }
 
@@ -29,7 +45,6 @@ h1 {
     flex-direction: row;
     flex: 1;
     min-height: 0;
-    padding: 10px 20px;
     gap: 20px;
     align-items: center;
 }
@@ -148,6 +163,7 @@ h1 {
     align-items: center;
     justify-content: center;
     flex: 1;
+    min-height: 0;
     text-align: center;
 }
 
