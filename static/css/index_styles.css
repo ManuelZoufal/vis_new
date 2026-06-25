@@ -1,104 +1,173 @@
 @import url('base.css');
 
+* {
+    box-sizing: border-box;
+}
+
 body {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     height: 100vh;
+    margin: 0;
+    padding: 20px;
+    overflow: hidden;
+    background-color: #f4f4f4;
+    font-family: Arial, sans-serif;
 }
+
+
+/* Outer container card – mirrors the old layout wrapper */
+.visualization-wrapper {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 90% ;
+    max-height: 90%;
+    background-color: #fff;
+    border-radius: 12px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.15);
+    padding: 10px;
+    overflow: hidden;
+}
+
 
 h1 {
     text-align: center;
-    margin-bottom: 20px;
     color: #333;
-    font-size: 4em; /* Verdoppelte Schriftgröße */
+    font-size: 6em;
+    margin: 0 0 10px 0;
+    flex-shrink: 0;
 }
 
-.container {
+/* ── Main 3-column layout ── */
+.main-layout {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    height: 90%;
+    min-height: 0;
+    gap: 20px;
+    margin: 100px 150px;
+    align-items: center;
+}
+
+/* ── Left: image panel ── */
+.images-panel {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    width: 25%;
+    flex-shrink: 0;
+}
+
+.images-panel:empty {
+    width: 0;
+    gap: 0;
+}
+
+.display-image {
+    width: auto;
+    height: auto;
+    border-radius: 8px;
+    object-fit: contain;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* ── Center: chart panel ── */
+.chart-panel {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
-    max-width: 1600px;
-    max-height: 1000px;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+}
+
+.occupancy-label {
+    font-size: 4em;
+    font-weight: bold;
+    color: #333;
+    text-align: center;
+    margin-bottom: 50px;
 }
 
 .chart-container {
-    width: auto;
-    max-width: 30%;
-    height: 50%;
-    margin-bottom: 20px;
+    position: relative;
+    width: min(100%, 420px);
+    aspect-ratio: 1 / 1;
 }
 
-.percentage-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: 20px;
-    width: auto;
-    max-width: 40%;
+.chart-container canvas {
+    width: 100% !important;
+    height: 100% !important;
 }
 
-.percentage-text {
-    font-size: 2em;
-    margin-bottom: 10px;
-}
-
-.percentage {
-    font-size: 8em;
-}
-
+/* ── Right: traffic light ── */
 .traffic-light-container {
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: auto;
-    max-width: 30%;
+    flex-shrink: 0;
 }
 
 .traffic-light {
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: 200px;
+    width: 400px;
+    background-color: #1a1a1a;
+    border: 6px solid #555;
+    border-radius: 20px;
+    padding: 16px 20px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5), inset 0 2px 6px rgba(0,0,0,0.4);
 }
 
 .light {
-    width: 200px;
-    height: 200px;
+    width: 300px;
+    height: 300px;
     border-radius: 50%;
-    margin: 20px 0;
+    margin: 12px 0;
+    border: 4px solid #333;
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.6);
 }
 
 .light.red {
-    background-color: rgba(255, 0, 0, 0.25);
+    background-color: #ffcccc;
 }
 
 .light.green {
-    background-color: rgba(0, 255, 0, 0.25);
+    background-color: #ccffcc;
 }
 
 .light.active.red {
-    background-color: rgba(255, 0, 0, 1);
+    background-color: #ff2020;
+    box-shadow: 0 0 30px rgba(255,0,0,0.8), inset 0 2px 8px rgba(0,0,0,0.3);
 }
 
 .light.active.green {
-    background-color: rgba(0, 255, 0, 1);
+    background-color: #00e000;
+    box-shadow: 0 0 30px rgba(0,220,0,0.8), inset 0 2px 8px rgba(0,0,0,0.3);
 }
 
 .status-text {
-    font-size: 2em;
-    margin-top: 20px;
+    font-size: 3.6em;
+    margin-top: 16px;
+    text-align: center;
 }
 
+/* ── Maintenance ── */
 .maintenance-section {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     text-align: center;
 }
 
@@ -108,27 +177,10 @@ h1 {
     margin-bottom: 20px;
 }
 
-@media (min-width: 600px) {
-    .container {
-        flex-direction: row;
-        justify-content: space-around;
-    }
-
-    .chart-container {
-        margin-bottom: 0;
-    }
-
-    .percentage-container {
-        margin-bottom: 0;
-    }
-
-    .traffic-light-container {
-        margin-bottom: 0;
-    }
-}
-
+/* ── Marquee ── */
 .marquee-container {
-    height: 7%;
+    flex-shrink: 0;
+    padding: 6px 0;
 }
 
 marquee {

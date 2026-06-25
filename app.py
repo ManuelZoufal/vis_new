@@ -27,8 +27,14 @@ from src.navigator import upload_data_to_navigator, navigator_thread  # Import n
 from src.helpers import login_required
 
 
+APP_VERSION = "1.0.0"
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("APP_SECRET_KEY", "your_secret_key")  # Set a secret key for session management
+app.secret_key = os.environ.get("APP_SECRET_KEY", "your_secret_key")
+
+@app.context_processor
+def inject_version():
+    return {'app_version': APP_VERSION}  # Set a secret key for session management
 session_lifetime = int(os.environ.get("SESSION_LIFETIME_HOURS", 24))  # Set session lifetime
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=session_lifetime)  # Set session lifetime
 

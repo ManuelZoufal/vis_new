@@ -2,15 +2,21 @@ from . import api_bp
 
 from src.sensor import sensors
 from src.helpers import get_local_ip, log_change
-from src.scheduler import add_schedule, edit_schedule, delete_schedule
+from src.scheduler import add_schedule as scheduler_add_schedule, edit_schedule as scheduler_edit_schedule, delete_schedule as scheduler_delete_schedule
 from src.database import get_connection, save_sensor_values
 
-from flask import jsonify, session, request, send_file
+from flask import jsonify, session, request, send_file, current_app, Response
+from werkzeug.utils import secure_filename
 from datetime import datetime, timezone, timedelta
 from threading import enumerate as enumerate_threads
 import json
 import sqlite3
 import socket
+import io
+import os
+import requests as http_requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # /api
@@ -333,8 +339,11 @@ def export_debug_info():
     """
     # Check if the user is an administrator
     if 'role' in session and session['role'] == 'Administrator':
-        # Return the debug_info.txt file as an attachment
-        return send_file('debug_info.txt', as_attachment=True)
+        lines = []
+        for thread in enumerate_threads():
+            lines.append(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Thread \"{thread.name}\" is {'active' if thread.is_alive() else 'inactive'}\n")
+        content = io.BytesIO(''.join(lines).encode('utf-8'))
+        return send_file(content, as_attachment=True, download_name='debug_info.txt', mimetype='text/plain')
     return jsonify({'error': 'Unauthorized to export debug information'}), 403
 
 # /api/sensors/<sensor_id>/reset
@@ -1113,15 +1122,13 @@ def update_group_settings(group_id):
     data = request.json
     with open('config.json', 'r') as file:
         config = json.load(file)
-    for group in config['groups']:
-        if str(group['group_id']) == group_id:
-            group['name'] = data.get('name', group['name'])
-            group['max_occupancy'] = data.get('max_occupancy', group['max_occupancy'])
-            group['welcome_text'] = data.get('welcome_text', group['welcome_text'])
-            group['maintenance_mode'] = data.get('maintenance_mode', group.get('maintenance_mode', False))
-            break
-        else:
-            return jsonify({'status': 'error', 'message': 'Group not found'}), 404
+    group = next((g for g in config['groups'] if str(g['group_id']) == group_id), None)
+    if not group:
+        return jsonify({'status': 'error', 'message': 'Group not found'}), 404
+    group['name'] = data.get('name', group['name'])
+    group['max_occupancy'] = data.get('max_occupancy', group['max_occupancy'])
+    group['welcome_text'] = data.get('welcome_text', group['welcome_text'])
+    group['maintenance_mode'] = data.get('maintenance_mode', group.get('maintenance_mode', False))
     with open('config.json', 'w') as file:
         json.dump(config, file, indent=4)
     log_change(f"Group {group_id} settings updated: name={data.get('name')}, max_occupancy={data.get('max_occupancy')}, welcome_text={data.get('welcome_text')}, maintenance_mode={data.get('maintenance_mode')}")
@@ -1186,7 +1193,7 @@ def get_schedulers():
 
 # /api/schedules/add
 @api_bp.route('/schedules/add', methods=['PUT'])
-def add_schedule():
+def add_schedule_route():
     """
     Add schedule
     ---
@@ -1292,13 +1299,13 @@ def add_schedule():
         json.dump(config, file, indent=4)
     
     # Add the new schedule to the scheduler
-    add_schedule(new_schedule)
-    
+    scheduler_add_schedule(new_schedule)
+
     return jsonify({'status': 'success', 'schedule': new_schedule}), 200
 
 # /api/schedules/<schedule_id>/edit
 @api_bp.route('/schedules/<schedule_id>/edit', methods=['POST'])
-def edit_schedule(schedule_id):
+def edit_schedule_route(schedule_id):
     """
     Edit schedule
     ---
@@ -1369,26 +1376,31 @@ def edit_schedule(schedule_id):
     data = request.json
     with open('config.json', 'r') as file:
         config = json.load(file)
-    
+
+    try:
+        schedule_id_int = int(schedule_id)
+    except (ValueError, TypeError):
+        return jsonify({'status': 'error', 'message': 'Invalid schedule ID'}), 400
+
     schedules = config.get('schedules', [])
     for schedule in schedules:
-        if schedule['id'] == schedule_id:
+        if schedule['id'] == schedule_id_int:
             schedule.update(data)
             break
     else:
         return jsonify({'status': 'error', 'message': 'Schedule not found'}), 404
-    
+
     with open('config.json', 'w') as file:
         json.dump(config, file, indent=4)
-    
+
     # Edit the schedule in the scheduler
-    edit_schedule(schedule_id, data)
-    
+    scheduler_edit_schedule(schedule_id_int, data)
+
     return jsonify({'status': 'success', 'schedule': data}), 200
 
 # /api/schedules/<schedule_id>/delete
 @api_bp.route('/schedules/<schedule_id>/delete', methods=['DELETE'])
-def delete_schedule(schedule_id):
+def delete_schedule_route(schedule_id):
     """
     Delete schedule
     ---
@@ -1429,13 +1441,150 @@ def delete_schedule(schedule_id):
     """
     with open('config.json', 'r') as file:
         config = json.load(file)
-    schedules = config.get('schedules', [])
-    schedules = [schedule for schedule in schedules if schedule.get('id') != schedule_id]
+    all_schedules = config.get('schedules', [])
+    # Vergleich als String, um Typ-Mismatches (int vs str) zu vermeiden
+    schedules = [s for s in all_schedules if str(s.get('id')) != str(schedule_id)]
     config['schedules'] = schedules
     with open('config.json', 'w') as file:
         json.dump(config, file, indent=4)
-    
+
     # Delete the schedule from the scheduler
-    delete_schedule(schedule_id)
-    
-    return jsonify({'status': 'success'})
+    try:
+        scheduler_delete_schedule(int(schedule_id))
+    except Exception:
+        pass
+
+    return jsonify({'status': 'success', 'schedules': schedules})
+
+
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+MAX_DISPLAY_IMAGES = 3
+
+
+def _allowed_image(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+
+
+def _upload_folder():
+    return os.path.join(current_app.root_path, 'static', 'uploads')
+
+
+# /api/groups/<group_id>/display_images  (POST = upload, GET = list)
+@api_bp.route('/groups/<group_id>/display_images', methods=['GET', 'POST'])
+def group_display_images(group_id):
+    with open('config.json', 'r') as f:
+        config = json.load(f)
+    group = next((g for g in config['groups'] if str(g['group_id']) == str(group_id)), None)
+    if not group:
+        return jsonify({'status': 'error', 'message': 'Group not found'}), 404
+
+    if request.method == 'GET':
+        images = group.get('display_images', [None, None, None])
+        return jsonify({'status': 'success', 'display_images': images}), 200
+
+    # POST: upload image to a slot
+    slot = request.form.get('slot')
+    if slot is None or not slot.isdigit() or not (0 <= int(slot) < MAX_DISPLAY_IMAGES):
+        return jsonify({'status': 'error', 'message': 'Invalid slot (0-2)'}), 400
+    slot = int(slot)
+
+    file = request.files.get('file')
+    if not file or file.filename == '':
+        return jsonify({'status': 'error', 'message': 'No file provided'}), 400
+    if not _allowed_image(file.filename):
+        return jsonify({'status': 'error', 'message': 'File type not allowed'}), 400
+
+    upload_folder = _upload_folder()
+    ext = file.filename.rsplit('.', 1)[1].lower()
+    filename = f"group_{group_id}_img_{slot}.{ext}"
+    os.makedirs(upload_folder, exist_ok=True)
+
+    # Remove old image file for this slot if different extension
+    images = group.get('display_images', [None, None, None])
+    while len(images) < MAX_DISPLAY_IMAGES:
+        images.append(None)
+    old = images[slot]
+    if old and old != filename:
+        old_path = os.path.join(upload_folder, old)
+        if os.path.exists(old_path):
+            os.remove(old_path)
+
+    file.save(os.path.join(upload_folder, filename))
+    images[slot] = filename
+    group['display_images'] = images
+    with open('config.json', 'w') as f:
+        json.dump(config, f, indent=4)
+    log_change(f"Group {group_id} display image slot {slot} updated: {filename}")
+    return jsonify({'status': 'success', 'display_images': images}), 200
+
+
+# /api/groups/<group_id>/display_images/<int:slot>  (DELETE)
+@api_bp.route('/groups/<group_id>/display_images/<int:slot>', methods=['DELETE'])
+def delete_group_display_image(group_id, slot):
+    if not (0 <= slot < MAX_DISPLAY_IMAGES):
+        return jsonify({'status': 'error', 'message': 'Invalid slot (0-2)'}), 400
+    with open('config.json', 'r') as f:
+        config = json.load(f)
+    group = next((g for g in config['groups'] if str(g['group_id']) == str(group_id)), None)
+    if not group:
+        return jsonify({'status': 'error', 'message': 'Group not found'}), 404
+
+    images = group.get('display_images', [None, None, None])
+    while len(images) < MAX_DISPLAY_IMAGES:
+        images.append(None)
+
+    old = images[slot]
+    if old:
+        old_path = os.path.join(_upload_folder(), old)
+        if os.path.exists(old_path):
+            os.remove(old_path)
+    images[slot] = None
+    group['display_images'] = images
+    with open('config.json', 'w') as f:
+        json.dump(config, f, indent=4)
+    log_change(f"Group {group_id} display image slot {slot} deleted")
+    return jsonify({'status': 'success', 'display_images': images}), 200
+
+
+# /api/sensors/<sensor_id>/webinterface/  (proxy – strips X-Frame-Options)
+@api_bp.route('/sensors/<sensor_id>/webinterface/', defaults={'subpath': ''})
+@api_bp.route('/sensors/<sensor_id>/webinterface/<path:subpath>')
+def sensor_webinterface_proxy(sensor_id, subpath):
+    with open('config.json', 'r') as f:
+        config = json.load(f)
+    sensor = next((s for s in config['sensors'] if str(s['sensor_id']) == str(sensor_id)), None)
+    if not sensor:
+        return jsonify({'status': 'error', 'message': 'Sensor not found'}), 404
+
+    ip = sensor.get('ip_address', '')
+    if not ip or ip == 'N/A':
+        return jsonify({'status': 'error', 'message': 'No IP address configured'}), 400
+
+    # Try HTTPS first, fall back to HTTP
+    for scheme in ('https', 'http'):
+        target_url = f"{scheme}://{ip}/{subpath}"
+        # Forward original query string
+        if request.query_string:
+            target_url += '?' + request.query_string.decode()
+        try:
+            resp = http_requests.request(
+                method=request.method,
+                url=target_url,
+                headers={k: v for k, v in request.headers if k.lower() not in ('host', 'content-length')},
+                data=request.get_data(),
+                allow_redirects=True,
+                verify=False,
+                timeout=5
+            )
+            # Strip headers that would block iframe embedding
+            excluded = {'x-frame-options', 'content-security-policy', 'transfer-encoding', 'connection'}
+            headers = [(k, v) for k, v in resp.headers.items() if k.lower() not in excluded]
+            return Response(resp.content, status=resp.status_code, headers=headers)
+        except http_requests.exceptions.ConnectionError:
+            continue
+        except http_requests.exceptions.Timeout:
+            return Response('Sensor nicht erreichbar (Timeout)', status=504, content_type='text/plain')
+        except Exception as e:
+            return Response(f'Proxy-Fehler: {e}', status=502, content_type='text/plain')
+
+    return Response('Sensor nicht erreichbar', status=502, content_type='text/plain')

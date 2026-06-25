@@ -24,7 +24,7 @@ def load_schedule_from_config(config_path):
     """
     with open(config_path, 'r') as file:
         config = json.load(file)
-    return config.get('schedule', [])
+    return config.get('schedules', [])
 
 def execute_schedule(schedule):
     """
