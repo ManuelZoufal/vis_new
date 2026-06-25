@@ -164,7 +164,7 @@ async function renderImageSlots(groupId) {
                 : '<span style="color:#999;font-size:0.9em;">Kein Bild</span>'
             }
             <div style="margin-top:8px;">
-                <input type="file" id="file-input-${slot}" accept="image/*" style="display:none;" onchange="uploadImage(${slot})">
+                <input type="file" id="file-input-${slot}" accept=".png,.jpg,.jpeg,.gif,.webp" style="display:none;" onchange="uploadImage(${slot})">
                 <button class="button button-secondary" onclick="document.getElementById('file-input-${slot}').click()" style="padding:6px 12px;font-size:0.9em;">
                     ${filename ? 'Ersetzen' : 'Hochladen'}
                 </button>
