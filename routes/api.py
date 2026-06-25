@@ -5,7 +5,7 @@ from src.helpers import get_local_ip, log_change
 from src.scheduler import add_schedule as scheduler_add_schedule, edit_schedule as scheduler_edit_schedule, delete_schedule as scheduler_delete_schedule
 from src.database import get_connection, save_sensor_values
 
-from flask import jsonify, session, request, send_file, current_app
+from flask import jsonify, session, request, send_file, current_app, Response
 from werkzeug.utils import secure_filename
 from datetime import datetime, timezone, timedelta
 from threading import enumerate as enumerate_threads
@@ -14,6 +14,9 @@ import sqlite3
 import socket
 import io
 import os
+import requests as http_requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # /api
@@ -1541,3 +1544,47 @@ def delete_group_display_image(group_id, slot):
         json.dump(config, f, indent=4)
     log_change(f"Group {group_id} display image slot {slot} deleted")
     return jsonify({'status': 'success', 'display_images': images}), 200
+
+
+# /api/sensors/<sensor_id>/webinterface/  (proxy – strips X-Frame-Options)
+@api_bp.route('/sensors/<sensor_id>/webinterface/', defaults={'subpath': ''})
+@api_bp.route('/sensors/<sensor_id>/webinterface/<path:subpath>')
+def sensor_webinterface_proxy(sensor_id, subpath):
+    with open('config.json', 'r') as f:
+        config = json.load(f)
+    sensor = next((s for s in config['sensors'] if str(s['sensor_id']) == str(sensor_id)), None)
+    if not sensor:
+        return jsonify({'status': 'error', 'message': 'Sensor not found'}), 404
+
+    ip = sensor.get('ip_address', '')
+    if not ip or ip == 'N/A':
+        return jsonify({'status': 'error', 'message': 'No IP address configured'}), 400
+
+    # Try HTTPS first, fall back to HTTP
+    for scheme in ('https', 'http'):
+        target_url = f"{scheme}://{ip}/{subpath}"
+        # Forward original query string
+        if request.query_string:
+            target_url += '?' + request.query_string.decode()
+        try:
+            resp = http_requests.request(
+                method=request.method,
+                url=target_url,
+                headers={k: v for k, v in request.headers if k.lower() not in ('host', 'content-length')},
+                data=request.get_data(),
+                allow_redirects=True,
+                verify=False,
+                timeout=5
+            )
+            # Strip headers that would block iframe embedding
+            excluded = {'x-frame-options', 'content-security-policy', 'transfer-encoding', 'connection'}
+            headers = [(k, v) for k, v in resp.headers.items() if k.lower() not in excluded]
+            return Response(resp.content, status=resp.status_code, headers=headers)
+        except http_requests.exceptions.ConnectionError:
+            continue
+        except http_requests.exceptions.Timeout:
+            return Response('Sensor nicht erreichbar (Timeout)', status=504, content_type='text/plain')
+        except Exception as e:
+            return Response(f'Proxy-Fehler: {e}', status=502, content_type='text/plain')
+
+    return Response('Sensor nicht erreichbar', status=502, content_type='text/plain')

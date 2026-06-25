@@ -23,7 +23,7 @@ async function fetchSensorData() {
             <td>
                 ${sensor.type === 'VIRTUAL' ? `<button class="button button-danger" onclick="deleteVirtualSensor('${sensor.sensor_id}')">Löschen</button>` : ''}
                 <button class="button button-secondary" onclick="openSensorModal('${sensor.sensor_id}')">Bearbeiten</button>
-                <button class="button button-secondary" onclick="openWebInterface('${sensor.ip_address}')">Webinterface</button>
+                <button class="button button-secondary" onclick="openWebInterface('${sensor.sensor_id}', '${sensor.ip_address}')">Webinterface</button>
                 <button class="button button-warning" onclick="resetSensor('${sensor.sensor_id}')">Zählwerte zurücksetzen</button>
                 <button class="button button-warning" onclick="rebootSensor('${sensor.sensor_id}')">Neustarten</button>
             </td>
@@ -178,12 +178,22 @@ async function deleteVirtualSensor(sensorId) {
     }
 }
 
-function openWebInterface(ipAddress) {
-    if (ipAddress && ipAddress !== 'N/A') {
-        window.open(`https://${ipAddress}`, '_blank');
-    } else {
-        alert('Webinterface nicht verfügbar');
+function openWebInterface(sensorId, ipAddress) {
+    if (!ipAddress || ipAddress === 'N/A') {
+        alert('Webinterface nicht verfügbar – keine IP-Adresse konfiguriert.');
+        return;
     }
+    const proxyUrl = `/api/sensors/${sensorId}/webinterface/`;
+    const directUrl = `https://${ipAddress}/`;
+    document.getElementById('webinterfaceModalTitle').innerText = `Webinterface – ${ipAddress}`;
+    document.getElementById('webinterfaceFrame').src = proxyUrl;
+    document.getElementById('webinterfaceExternalLink').href = directUrl;
+    document.getElementById('webinterfaceModal').style.display = 'block';
+}
+
+function closeWebInterfaceModal() {
+    document.getElementById('webinterfaceFrame').src = '';
+    document.getElementById('webinterfaceModal').style.display = 'none';
 }
 
 fetchSensorData();
@@ -191,12 +201,10 @@ setInterval(fetchSensorData, 1000);  // Refresh data every second
 
 // Close the modal when clicking outside of it
 window.onclick = function(event) {
-    const sensorModal = document.getElementById('sensorModal');
-    if (event.target === sensorModal) {
-        sensorModal.style.display = 'none';
-    }
-    const virtualSensorModal = document.getElementById('virtualSensorModal');
-    if (event.target === virtualSensorModal) {
-        virtualSensorModal.style.display = 'none';
-    }
+    ['sensorModal', 'virtualSensorModal'].forEach(id => {
+        const modal = document.getElementById(id);
+        if (event.target === modal) modal.style.display = 'none';
+    });
+    const webModal = document.getElementById('webinterfaceModal');
+    if (event.target === webModal) closeWebInterfaceModal();
 }
