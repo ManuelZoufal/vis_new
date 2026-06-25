@@ -10,7 +10,7 @@ async function fetchAdminData() {
 
         const dbDataTable = document.getElementById('db-data-table').getElementsByTagName('tbody')[0];
         dbDataTable.innerHTML = '';
-        (data.sensors || []).sort((a, b) => String(a.sensor_id).localeCompare(String(b.sensor_id))).forEach(row => {
+        (data.sensors || []).sort((a, b) => a.sensor_id.localeCompare(b.sensor_id)).forEach(row => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${row.sensor_id}</td>

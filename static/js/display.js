@@ -118,7 +118,7 @@ async function init() {
                 const value = chart.data.datasets[0].data[0];
                 const pct = total > 0 ? Math.round(value / total * 100) : 0;
                 const text = `${pct}%`;
-                const color = pct >= 100 ? '#ff2020' : '#009999';
+                const color = pct >= 100 ? '#ff2020' : '#00e000';
 
                 // Scale font to fill the inner circle
                 let fontSize = Math.floor(innerRadius * 1.3);
