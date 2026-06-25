@@ -5,7 +5,7 @@ from src.helpers import get_local_ip, log_change
 from src.scheduler import add_schedule as scheduler_add_schedule, edit_schedule as scheduler_edit_schedule, delete_schedule as scheduler_delete_schedule
 from src.database import get_connection, save_sensor_values
 
-from flask import jsonify, session, request, send_file
+from flask import jsonify, session, request, send_file, current_app
 from werkzeug.utils import secure_filename
 from datetime import datetime, timezone, timedelta
 from threading import enumerate as enumerate_threads
@@ -1455,12 +1455,15 @@ def delete_schedule_route(schedule_id):
 
 
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-UPLOAD_FOLDER = 'static/uploads'
 MAX_DISPLAY_IMAGES = 3
 
 
 def _allowed_image(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+
+
+def _upload_folder():
+    return os.path.join(current_app.root_path, 'static', 'uploads')
 
 
 # /api/groups/<group_id>/display_images  (POST = upload, GET = list)
@@ -1488,9 +1491,10 @@ def group_display_images(group_id):
     if not _allowed_image(file.filename):
         return jsonify({'status': 'error', 'message': 'File type not allowed'}), 400
 
+    upload_folder = _upload_folder()
     ext = file.filename.rsplit('.', 1)[1].lower()
     filename = f"group_{group_id}_img_{slot}.{ext}"
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    os.makedirs(upload_folder, exist_ok=True)
 
     # Remove old image file for this slot if different extension
     images = group.get('display_images', [None, None, None])
@@ -1498,11 +1502,11 @@ def group_display_images(group_id):
         images.append(None)
     old = images[slot]
     if old and old != filename:
-        old_path = os.path.join(UPLOAD_FOLDER, old)
+        old_path = os.path.join(upload_folder, old)
         if os.path.exists(old_path):
             os.remove(old_path)
 
-    file.save(os.path.join(UPLOAD_FOLDER, filename))
+    file.save(os.path.join(upload_folder, filename))
     images[slot] = filename
     group['display_images'] = images
     with open('config.json', 'w') as f:
@@ -1528,7 +1532,7 @@ def delete_group_display_image(group_id, slot):
 
     old = images[slot]
     if old:
-        old_path = os.path.join(UPLOAD_FOLDER, old)
+        old_path = os.path.join(_upload_folder(), old)
         if os.path.exists(old_path):
             os.remove(old_path)
     images[slot] = None
